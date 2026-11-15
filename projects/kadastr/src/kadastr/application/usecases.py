@@ -8,12 +8,17 @@ from typing import Iterable
 from ..domain.entities import AnalysisRun, CadastralObject
 from ..domain.gateways import CadastralGateway, GlossaryRepository
 from ..domain.glossary import Glossary
+from ..domain.history import HistoryItem, HistoryRepository
 from ..domain.problems import ProblemPolicy
 from ..domain.value_objects import CadastralNumber
 from .dtos import Envelope, fail, object_summary, ok
 
 
 CN_RE = re.compile(r"\b\d{2}:\d{2}:\d{6,7}:\d+\b")
+# «КН | имя» или «КН - имя»
+ENTRY_RE = re.compile(
+    r"(?P<cn>\d{2}:\d{2}:\d{6,7}:\d+)\s*(?:[|\-–—]\s*(?P<name>[^\n]+))?"
+)
 
 
 def extract_numbers(text: str) -> list[str]:
@@ -26,6 +31,28 @@ def extract_numbers(text: str) -> list[str]:
     return out
 
 
+def extract_entries(text: str) -> list[tuple[str, str | None]]:
+    """Извлекает пары (КН, имя). Имя — всё после | или тире до конца строки."""
+    seen: set[str] = set()
+    out: list[tuple[str, str | None]] = []
+    for m in ENTRY_RE.finditer(text or ""):
+        cn = m.group("cn")
+        if cn in seen:
+            # если имя уже было без имени, а потом с именем — обновим
+            for i, (c, n) in enumerate(out):
+                if c == cn and not n and m.group("name"):
+                    out[i] = (cn, m.group("name").strip() or None)
+                    break
+            continue
+        seen.add(cn)
+        name = (m.group("name") or "").strip() or None
+        # отсечь комментарии
+        if name:
+            name = re.split(r"#+", name, maxsplit=1)[0].strip() or None
+        out.append((cn, name))
+    return out
+
+
 class AnalyzeCadastralObjects:
     """Основной use case: по списку КН собрать агрегаты и применить правила проблем."""
 
@@ -33,19 +60,30 @@ class AnalyzeCadastralObjects:
         self,
         gateway: CadastralGateway,
         policy: ProblemPolicy | None = None,
+        history: HistoryRepository | None = None,
     ):
         self.gateway = gateway
         self.policy = policy or ProblemPolicy()
+        self.history = history
 
-    def execute(self, numbers: Iterable[str]) -> AnalysisRun:
+    def execute(self, numbers: Iterable[str], *, names: dict[str, str] | None = None) -> AnalysisRun:
         run = AnalysisRun(created_at=dt.datetime.now().isoformat(timespec="seconds"))
+        names = names or {}
         unique: list[str] = []
         for raw in numbers:
             cn = (raw or "").strip()
             if cn and cn not in unique:
                 unique.append(cn)
         for cn in unique:
-            run.objects.append(self._analyze_one(cn))
+            obj = self._analyze_one(cn, name=names.get(cn))
+            run.objects.append(obj)
+            if self.history:
+                try:
+                    self.history.upsert(
+                        HistoryItem(number=CadastralNumber(obj.number.value), name=names.get(cn))
+                    )
+                except Exception:
+                    pass
         if any((o.error or "").find("403") >= 0 for o in run.objects):
             run.warnings.append(
                 "Часть запросов заблокирована (403). НСПД ограничивает доступ "
@@ -53,9 +91,11 @@ class AnalyzeCadastralObjects:
             )
         return run
 
-    def execute_envelope(self, numbers: Iterable[str]) -> Envelope:
+    def execute_envelope(
+        self, numbers: Iterable[str], *, names: dict[str, str] | None = None
+    ) -> Envelope:
         try:
-            run = self.execute(numbers)
+            run = self.execute(numbers, names=names)
         except Exception as e:
             return fail("analyze_failed", str(e))
         return ok(
@@ -65,7 +105,7 @@ class AnalyzeCadastralObjects:
             source="nspd",
         )
 
-    def _analyze_one(self, cn_raw: str) -> CadastralObject:
+    def _analyze_one(self, cn_raw: str, *, name: str | None = None) -> CadastralObject:
         try:
             number = CadastralNumber(cn_raw)
         except ValueError as e:
@@ -79,13 +119,18 @@ class AnalyzeCadastralObjects:
             obj = self.gateway.find_object(number)
         except Exception as e:
             obj = CadastralObject(number=number, found=False, error=str(e))
+            if name:
+                obj.display_name = name
             self.policy.evaluate(obj)
             return obj
 
         if not obj:
-            obj = CadastralObject(number=number, found=False)
+            obj = CadastralObject(number=number, found=False, display_name=name or None)
             self.policy.evaluate(obj)
             return obj
+
+        if name:
+            obj.display_name = name
 
         try:
             tabs = self.gateway.load_tabs(obj)
@@ -154,3 +199,55 @@ class GetGlossary:
                 return fail("term_not_found", f"Термин не найден: {code}")
             return ok(term.to_dict())
         return ok(g.to_dict())
+
+
+class ManageHistory:
+    def __init__(self, repo: HistoryRepository):
+        self.repo = repo
+
+    def list(self) -> list[HistoryItem]:
+        return self.repo.list_items()
+
+    def list_envelope(self) -> Envelope:
+        try:
+            items = self.list()
+        except Exception as e:
+            return fail("history_failed", str(e))
+        return ok({"items": [i.to_dict() for i in items], "count": len(items)})
+
+    def save_envelope(self, cn: str, name: str | None = None) -> Envelope:
+        try:
+            number = CadastralNumber(cn)
+        except ValueError as e:
+            return fail("bad_cn", str(e))
+        try:
+            item = self.repo.upsert(HistoryItem(number=number, name=(name or "").strip() or None))
+        except Exception as e:
+            return fail("history_failed", str(e))
+        return ok(item.to_dict())
+
+    def rename_envelope(self, cn: str, name: str | None) -> Envelope:
+        try:
+            number = CadastralNumber(cn)
+        except ValueError as e:
+            return fail("bad_cn", str(e))
+        try:
+            item = self.repo.rename(number, name)
+        except Exception as e:
+            return fail("history_failed", str(e))
+        if not item:
+            return fail("not_in_history", f"Нет записи в истории: {cn}")
+        return ok(item.to_dict())
+
+    def delete_envelope(self, cn: str) -> Envelope:
+        try:
+            number = CadastralNumber(cn)
+        except ValueError as e:
+            return fail("bad_cn", str(e))
+        try:
+            deleted = self.repo.delete(number)
+        except Exception as e:
+            return fail("history_failed", str(e))
+        if not deleted:
+            return fail("not_in_history", f"Нет записи в истории: {cn}")
+        return ok({"deleted": cn})

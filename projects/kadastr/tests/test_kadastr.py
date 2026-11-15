@@ -9,9 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from kadastr.application.usecases import AnalyzeCadastralObjects, extract_numbers  # noqa: E402
+from kadastr.application.usecases import AnalyzeCadastralObjects, ManageHistory, extract_entries, extract_numbers  # noqa: E402
 from kadastr.domain.entities import CadastralObject  # noqa: E402
 from kadastr.domain.glossary import Glossary  # noqa: E402
+from kadastr.domain.history import HistoryItem  # noqa: E402
 from kadastr.domain.problems import ProblemPolicy  # noqa: E402
 from kadastr.domain.value_objects import (  # noqa: E402
     CadastralNumber,
@@ -19,6 +20,7 @@ from kadastr.domain.value_objects import (  # noqa: E402
     Severity,
 )
 from kadastr.infrastructure.glossary_repo import JsonGlossaryRepository  # noqa: E402
+from kadastr.infrastructure.history_repo import JsonHistoryRepository  # noqa: E402
 from kadastr.infrastructure.nspd.acl import NspdAcl  # noqa: E402
 
 
@@ -83,6 +85,13 @@ class TestExtractNumbers(unittest.TestCase):
         мусор 77:01:0001001:1 и 50:14:0000000:156789
         """
         self.assertEqual(extract_numbers(text), ["50:14:0000000:156789", "77:01:0001001:1"])
+
+    def test_entries_with_names(self):
+        text = "50:14:0000000:156789 | мой участок\n50:14:0000000:156713 | дом родителей\n50:14:0000000:156800"
+        entries = extract_entries(text)
+        self.assertEqual(entries[0], ("50:14:0000000:156789", "мой участок"))
+        self.assertEqual(entries[1], ("50:14:0000000:156713", "дом родителей"))
+        self.assertEqual(entries[2], ("50:14:0000000:156800", None))
 
 
 class TestProblemPolicy(unittest.TestCase):
@@ -197,6 +206,36 @@ class TestUseCase(unittest.TestCase):
         self.assertTrue(o["found"])
         codes = [p["code"] for p in o["problems"]]
         self.assertIn("vri_missing", codes)
+
+
+class TestHistory(unittest.TestCase):
+    def test_repo_upsert_rename_delete(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            repo = JsonHistoryRepository(Path(d) / "history.json")
+            item = repo.upsert(HistoryItem(number=CadastralNumber("50:14:0000000:156789"), name="мой участок"))
+            self.assertEqual(item.name, "мой участок")
+            self.assertEqual(item.runs, 1)
+            renamed = repo.rename(CadastralNumber("50:14:0000000:156789"), "лот 15")
+            self.assertEqual(renamed.name, "лот 15")
+            items = repo.list_items()
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0].title, "лот 15")
+            self.assertTrue(repo.delete(CadastralNumber("50:14:0000000:156789")))
+            self.assertEqual(repo.list_items(), [])
+
+    def test_manage_history_envelope(self):
+        import tempfile
+        from pathlib import Path
+        uc = ManageHistory(JsonHistoryRepository(Path(tempfile.mkdtemp()) / "h.json"))
+        env = uc.save_envelope("50:14:0000000:156789", "дом родителей")
+        self.assertTrue(env.ok)
+        self.assertEqual(env.data["name"], "дом родителей")
+        env = uc.list_envelope()
+        self.assertEqual(env.data["count"], 1)
+        env = uc.delete_envelope("50:14:0000000:156789")
+        self.assertTrue(env.ok)
 
 
 class TestGlossary(unittest.TestCase):

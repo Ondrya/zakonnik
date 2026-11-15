@@ -15,6 +15,16 @@ python serve.py 9000
 ```
 
 Номера меняются в `numbers.txt` или передаются аргументами / в поле UI.
+Можно сразу с именем:
+
+```
+50:14:0000000:156789 | мой участок
+50:14:0000000:156713 | дом родителей
+```
+
+История поиска — `data/history.json` (вне git). В UI: клик по записи — повторный анализ, ✎ — переименовать, ✕ — удалить.
+CLI: `python run.py --history`, `python run.py --name "лот 15" 50:14:0000000:156789`.
+
 Результаты CLI: `output/report.html`, `output/report.json`.
 
 ## Что подсвечивается
@@ -75,7 +85,11 @@ src/kadastr/
 GET  /api/health
 GET  /api/glossary[?code=vri]
 GET  /api/analyze?cn=50:14:0000000:156789
-POST /api/analyze  {"numbers": ["50:14:0000000:156789"]}
+POST /api/analyze  {"numbers": ["50:14:0000000:156789 | мой участок"]}
+GET  /api/history
+POST /api/history  {"cn": "...", "name": "мой участок"}
+PATCH /api/history {"cn": "...", "name": "лот 15"}
+DELETE /api/history?cn=...
 GET  /             # UI
 ```
 

@@ -14,6 +14,10 @@ output/
 *.report.json
 *.report.html
 
+# Локальная история поиска (пользовательские данные)
+data/history.json
+projects/kadastr/data/history.json
+
 # IDE / OS
 .idea/
 .vscode/

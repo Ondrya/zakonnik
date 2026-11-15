@@ -184,10 +184,12 @@ def _table_html(objects: list[CadastralObject]) -> str:
             if p.severity in (Severity.CRITICAL, Severity.HIGH)
         ]
         addr = o.address or (o.linked_plot.address if o.linked_plot else None)
+        title = o.display_name or o.number.value
         rows.append(
             f"""
             <tr style="border-left:4px solid {color}">
-              <td><a href="#obj-{_esc(o.number.value).replace(':', '_')}">{_esc(o.number.value)}</a></td>
+              <td><a href="#obj-{_esc(o.number.value).replace(':', '_')}">{_esc(title)}</a>
+                  <div class="muted">{_esc(o.number.value)}</div></td>
               <td>{_esc(o.kind.title_ru)}</td>
               <td>{_esc(addr or "—")}</td>
               <td>{_esc(o.status or "—")}</td>
@@ -268,6 +270,7 @@ def render_html(run: AnalysisRun) -> str:
     objs_html = []
     for o in run.objects:
         anchor = f"obj-{_esc(o.number.value).replace(':', '_')}"
+        heading = o.display_name or o.number.value
         err = f'<p class="error">Ошибка: {_esc(o.error)}</p>' if o.error else ""
         linked = ""
         if o.linked_plot:
@@ -284,8 +287,8 @@ def render_html(run: AnalysisRun) -> str:
         objs_html.append(
             f"""
             <section class="obj" id="{anchor}">
-              <h2>{_esc(o.number.value)} {_badge(o)}</h2>
-              <p class="muted">{_esc(o.kind.title_ru)} · {_esc(o.address)}</p>
+              <h2>{_esc(heading)} {_badge(o)}</h2>
+              <p class="muted">{_esc(o.kind.title_ru)} · {_esc(o.number.value)} · {_esc(o.address)}</p>
               {err}
               {_attrs_html(o)}
               <h3>Проблемы</h3>

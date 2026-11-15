@@ -17,22 +17,30 @@ header { padding:16px 20px; border-bottom:1px solid var(--line); display:flex; g
 header h1 { margin:0; font-size:18px }
 header .tag { color:var(--muted); font-size:12px }
 main { max-width:1280px; margin:0 auto; padding:16px; display:grid; gap:16px }
-@media(min-width:900px){ main { grid-template-columns: 340px 1fr } aside{position:sticky; top:16px; align-self:start} }
+@media(min-width:900px){ main { grid-template-columns: 360px 1fr } aside{position:sticky; top:16px; align-self:start} }
 .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px }
 label { font-size:13px; color:var(--muted); display:block; margin-bottom:6px }
-textarea { width:100%; min-height:120px; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font-family:ui-monospace,monospace; font-size:14px; resize:vertical }
+textarea { width:100%; min-height:110px; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font-family:ui-monospace,monospace; font-size:14px; resize:vertical }
 button { background:var(--accent); color:#04121f; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; width:100%; margin-top:10px }
 button:disabled { opacity:.6; cursor:wait }
 button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); font-weight:500 }
 .hint { font-size:12px; color:var(--muted); margin-top:8px }
 #glossary-search { width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0 }
-#terms { max-height:360px; overflow:auto; display:flex; flex-direction:column; gap:8px }
-.term { border:1px solid var(--line); border-radius:10px; padding:10px }
+#terms, #history { max-height:320px; overflow:auto; display:flex; flex-direction:column; gap:8px }
+.term, .hitem { border:1px solid var(--line); border-radius:10px; padding:10px }
 .term b { cursor:pointer }
 .term .cit { font-size:13px; margin-top:6px }
 .term .law { font-size:12px; color:var(--muted); margin-top:6px; display:none }
 .term.open .law { display:block }
 .term .regs { font-size:11px; color:var(--accent); margin-top:4px }
+.hitem { display:flex; gap:8px; align-items:center; cursor:pointer }
+.hitem:hover { border-color:var(--accent) }
+.hitem .nm { font-weight:600; font-size:14px }
+.hitem .cn { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted) }
+.hitem .meta { font-size:11px; color:var(--muted) }
+.hitem button { width:auto; margin:0; padding:4px 8px; font-size:12px; font-weight:500; background:var(--card2); color:var(--muted); border:1px solid var(--line) }
+.hitem button:hover { color:var(--text) }
+.hitem .grow { flex:1; min-width:0 }
 #status { font-size:13px; color:var(--muted); min-height:20px }
 .err { color:var(--crit); font-size:13px }
 #summary table { width:100%; border-collapse:collapse; font-size:13px }
@@ -49,29 +57,44 @@ button.ghost { background:transparent; color:var(--accent); border:1px solid var
 .kpi { background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:13px }
 .kpi b { display:block; font-size:18px }
 a { color:var(--accent) }
+.tabs { display:flex; gap:6px; margin-bottom:8px }
+.tabs button { width:auto; margin:0; padding:6px 10px; font-size:12px; background:var(--card2); color:var(--muted); border:1px solid var(--line) }
+.tabs button.active { background:var(--accent); color:#04121f; border-color:var(--accent) }
+#rename-dialog { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:1000 }
+#rename-dialog .box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; width:min(400px, 90vw) }
+#rename-dialog input { width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0 }
 </style>
 </head>
 <body>
 <header>
   <h1>Законник · Кадастр</h1>
-  <span class="tag">ПКК/НСПД · подсветка проблем · справочник терминов</span>
+  <span class="tag">ПКК/НСПД · история · имена участков · справочник</span>
   <span style="flex:1"></span>
   <a href="/api/glossary" target="_blank" class="tag">API</a>
 </header>
 <main>
   <aside>
     <div class="panel">
-      <label for="cns">Кадастровые номера (по одному или через пробел)</label>
-      <textarea id="cns" placeholder="50:14:0000000:156789
-50:14:0000000:156713"></textarea>
+      <label for="cns">Кадастровые номера (можно с именем)</label>
+      <textarea id="cns" placeholder="50:14:0000000:156789 | мой участок
+50:14:0000000:156713 | дом родителей
+50:14:0000000:156800 | лот 15"></textarea>
       <button id="go">Проверить</button>
-      <div class="hint">Формат: XX:XX:XXXXXX(XXX):NNN. Можно вставить текст — номера извлекутся сами.</div>
+      <div class="hint">Формат: <code>КН</code> или <code>КН | имя</code>. Имя можно задать и потом в истории.</div>
       <div id="status"></div>
     </div>
     <div class="panel">
-      <label>Справочник терминов</label>
-      <input id="glossary-search" placeholder="Поиск: ВРИ, арест, ЗОУИТ…">
-      <div id="terms"><div class="hint">Загрузка…</div></div>
+      <div class="tabs">
+        <button id="tab-hist" class="active">История</button>
+        <button id="tab-glos">Справочник</button>
+      </div>
+      <div id="pane-hist">
+        <div id="history"><div class="hint">Пусто. Проверьте участок — появится здесь.</div></div>
+      </div>
+      <div id="pane-glos" hidden>
+        <input id="glossary-search" placeholder="Поиск: ВРИ, арест, ЗОУИТ…">
+        <div id="terms"><div class="hint">Загрузка…</div></div>
+      </div>
     </div>
   </aside>
   <section>
@@ -86,13 +109,25 @@ a { color:var(--accent) }
     <div class="panel" id="empty">
       <p>Введите кадастровые номера слева и нажмите «Проверить».</p>
       <p class="hint">
-        Сервис обращается к публичной кадастровой карте НСПД. Аресты, ипотеки и сервитуты
-        в ПКК не публикуются — для них нужна выписка ЕГРН. Инструмент подсвечивает:
-        отсутствие границ, ВРИ, ЗОУИТ, наложения, красные линии, ООПТ, затопление, статус.
+        Присвойте участку имя: <code>50:14:0000000:156789 | мой участок</code>.
+        История сохраняется в браузере проекта (файл data/history.json) и доступна для повторного поиска в один клик.
+        Аресты, ипотеки, сервитуты в ПКК не публикуются — для них нужна выписка ЕГРН.
       </p>
     </div>
   </section>
 </main>
+
+<div id="rename-dialog">
+  <div class="box">
+    <h3 id="rename-title">Имя участка</h3>
+    <input id="rename-input" placeholder="мой участок / лот 15 / дом родителей">
+    <div style="display:flex; gap:8px">
+      <button id="rename-save">Сохранить</button>
+      <button id="rename-cancel" class="ghost">Отмена</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const $ = s => document.querySelector(s);
@@ -103,8 +138,9 @@ const SEV = {
   info: {c:'#3b82f6', t:'Инфо'},
   ok: {c:'#22c55e', t:'Норма'}
 };
-let map, layer;
+let map, layer, renameCn = null;
 
+/* ---- глоссарий ---- */
 async function loadGlossary(q='') {
   try {
     const r = await fetch('/api/glossary');
@@ -113,9 +149,7 @@ async function loadGlossary(q='') {
     let terms = env.data.terms || [];
     if (q) {
       q = q.toLowerCase();
-      terms = terms.filter(t =>
-        (t.title+' '+t.for_citizen+' '+t.for_lawyer+' '+t.code).toLowerCase().includes(q)
-      );
+      terms = terms.filter(t => (t.title+' '+t.for_citizen+' '+t.for_lawyer+' '+t.code).toLowerCase().includes(q));
     }
     $('#terms').innerHTML = terms.map(t => `
       <div class="term" data-code="${t.code}">
@@ -124,13 +158,70 @@ async function loadGlossary(q='') {
         <div class="law"><b>Юристу:</b> ${t.for_lawyer}
           ${t.regulations?.length ? `<div class="regs">Регламенты: ${t.regulations.join('; ')}</div>` : ''}
         </div>
-      </div>
-    `).join('') || '<div class="hint">Не найдено</div>';
+      </div>`).join('') || '<div class="hint">Не найдено</div>';
   } catch(e) {
     $('#terms').innerHTML = `<div class="err">${e.message}</div>`;
   }
 }
 
+/* ---- история ---- */
+async function loadHistory() {
+  try {
+    const r = await fetch('/api/history');
+    const env = await r.json();
+    if (!env.ok) throw new Error(env.error?.message || 'ошибка');
+    const items = env.data.items || [];
+    if (!items.length) {
+      $('#history').innerHTML = '<div class="hint">Пусто. Проверьте участок — появится здесь.</div>';
+      return;
+    }
+    $('#history').innerHTML = items.map(i => `
+      <div class="hitem" data-cn="${i.cn}" data-name="${(i.name||'').replace(/"/g,'&quot;')}">
+        <div class="grow" onclick="analyzeOne('${i.cn}')">
+          <div class="nm">${i.name ? i.name : '<i>без имени</i>'}</div>
+          <div class="cn">${i.cn}</div>
+          <div class="meta">проверок: ${i.runs||0}${i.last_used_at ? ' · '+i.last_used_at.slice(0,10) : ''}</div>
+        </div>
+        <button onclick="openRename('${i.cn}', this.closest('.hitem').dataset.name)" title="Переименовать">✎</button>
+        <button onclick="delHist('${i.cn}')" title="Удалить">✕</button>
+      </div>`).join('');
+  } catch(e) {
+    $('#history').innerHTML = `<div class="err">${e.message}</div>`;
+  }
+}
+
+function openRename(cn, current) {
+  renameCn = cn;
+  $('#rename-title').textContent = 'Имя для ' + cn;
+  $('#rename-input').value = current || '';
+  $('#rename-dialog').style.display = 'flex';
+  $('#rename-input').focus();
+}
+$('#rename-cancel').addEventListener('click', () => $('#rename-dialog').style.display = 'none');
+$('#rename-save').addEventListener('click', async () => {
+  if (!renameCn) return;
+  const name = $('#rename-input').value.trim();
+  await fetch('/api/history', {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cn: renameCn, name})
+  });
+  $('#rename-dialog').style.display = 'none';
+  loadHistory();
+});
+$('#rename-dialog').addEventListener('click', e => { if (e.target.id==='rename-dialog') $('#rename-dialog').style.display='none'; });
+
+async function delHist(cn) {
+  if (!confirm('Удалить из истории ' + cn + '?')) return;
+  await fetch('/api/history?cn=' + encodeURIComponent(cn), {method:'DELETE'});
+  loadHistory();
+}
+
+function analyzeOne(cn) {
+  $('#cns').value = cn;
+  analyze();
+}
+
+/* ---- анализ ---- */
 function geojsonFrom(run) {
   const feats = [];
   const colors = {
@@ -141,7 +232,8 @@ function geojsonFrom(run) {
     if (geom && geom.geojson) feats.push({type:'Feature', geometry:geom.geojson, properties:props});
   };
   for (const o of run.objects || []) {
-    push(o.geometry, {title:`${o.cad_number} — ${o.kind_title}`, color:SEV[o.max_severity]?.c || '#38bdf8', weight:4, fillOpacity:.25});
+    const label = o.name ? `${o.name} (${o.cad_number})` : `${o.cad_number} — ${o.kind_title}`;
+    push(o.geometry, {title:label, color:SEV[o.max_severity]?.c || '#38bdf8', weight:4, fillOpacity:.25});
     if (o.linked_zu) push(o.linked_zu.geometry, {title:`ЗУ ${o.linked_zu.cad_number}`, color:SEV[o.linked_zu.max_severity]?.c || '#38bdf8', weight:3, fillOpacity:.2});
     for (const r of o.related || []) {
       if (!r.geometry) continue;
@@ -176,12 +268,13 @@ function render(run) {
     <div class="kpi"><b style="color:var(--crit)">${crit}</b>с критичными</div>
     <div class="kpi"><b style="color:var(--high)">${high}</b>с существенными</div>`;
   $('#summary').innerHTML = `<table>
-    <thead><tr><th>КН</th><th>Тип</th><th>Адрес</th><th>Статус</th><th>Проблемы</th></tr></thead>
+    <thead><tr><th>Объект</th><th>КН</th><th>Адрес</th><th>Статус</th><th>Проблемы</th></tr></thead>
     <tbody>${objs.map(o=>{
       const c=o.counts||{}; const s=SEV[o.max_severity]||SEV.ok;
       const n=(c.critical||0)+(c.high||0)+(c.medium||0)+(c.info||0);
+      const title = o.name ? `${o.name}<div class="hint">${o.cad_number}</div>` : o.cad_number;
       return `<tr>
-        <td>${o.cad_number}</td><td>${o.kind_title||''}</td>
+        <td>${title}</td><td>${o.kind_title||''}</td>
         <td>${o.address||o.linked_zu?.address||'—'}</td>
         <td>${o.status||'—'}</td>
         <td><span class="badge" style="background:${s.c}">${n? n+' шт.': 'ок'}</span></td>
@@ -190,8 +283,9 @@ function render(run) {
 
   $('#details').innerHTML = objs.map(o=>{
     const s=SEV[o.max_severity]||SEV.ok;
+    const heading = o.name ? `${o.name} · ${o.cad_number}` : o.cad_number;
     return `<div class="panel" style="margin-top:12px">
-      <h3>${o.cad_number} <span class="badge" style="background:${s.c}">${s.t}</span></h3>
+      <h3>${heading} <span class="badge" style="background:${s.c}">${s.t}</span></h3>
       <p class="hint">${o.kind_title} · ${o.address||''}</p>
       ${o.error?`<p class="err">${o.error}</p>`:''}
       <div><b>Статус:</b> ${o.status||'—'} · <b>ВРИ:</b> ${o.vri||'—'} ·
@@ -218,18 +312,24 @@ function render(run) {
 
 async function analyze() {
   const text = $('#cns').value;
-  const nums = (text.match(/\d{2}:\d{2}:\d{6,7}:\d+/g) || []);
-  if (!nums.length) { $('#status').innerHTML = '<span class="err">Введите кадастровые номера</span>'; return; }
+  // парсим КН | имя
+  const items = [];
+  for (const line of text.split(/[\n;]+/)) {
+    const m = line.match(/(\d{2}:\d{2}:\d{6,7}:\d+)\s*(?:[|\-–—]\s*(.+))?/);
+    if (m) items.push({cn: m[1], name: (m[2]||'').trim() || null});
+  }
+  if (!items.length) { $('#status').innerHTML = '<span class="err">Введите кадастровые номера</span>'; return; }
   $('#go').disabled = true;
   $('#status').textContent = 'Запрос к НСПД… это может занять 10–40 секунд';
   try {
     const r = await fetch('/api/analyze', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({numbers: nums})
+      body: JSON.stringify({numbers: items})
     });
     const env = await r.json();
     if (!env.ok) throw new Error(env.error?.message || 'Ошибка анализа');
     render(env.data);
+    loadHistory();
     if (env.data.warnings?.length) {
       $('#status').innerHTML = env.data.warnings.map(w=>`<span class="err">${w}</span>`).join('<br>');
     } else {
@@ -244,7 +344,17 @@ async function analyze() {
 
 $('#go').addEventListener('click', analyze);
 $('#glossary-search').addEventListener('input', e=>loadGlossary(e.target.value.trim()));
+$('#tab-hist').addEventListener('click', () => {
+  $('#tab-hist').classList.add('active'); $('#tab-glos').classList.remove('active');
+  $('#pane-hist').hidden = false; $('#pane-glos').hidden = true;
+});
+$('#tab-glos').addEventListener('click', () => {
+  $('#tab-glos').classList.add('active'); $('#tab-hist').classList.remove('active');
+  $('#pane-glos').hidden = false; $('#pane-hist').hidden = true;
+});
+
 loadGlossary();
+loadHistory();
 </script>
 </body>
 </html>
