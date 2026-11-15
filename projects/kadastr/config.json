@@ -1,0 +1,8 @@
+{
+  "numbers_file": "numbers.txt",
+  "output_dir": "output",
+  "glossary_file": "data/glossary.json",
+  "delay_ms": 700,
+  "retries": 3,
+  "proxy": null
+}

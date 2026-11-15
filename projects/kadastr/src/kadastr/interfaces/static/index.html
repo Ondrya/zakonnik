@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Законник · Кадастр — проверка участков</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --bg:#0b1220; --card:#111a2e; --card2:#0f172a; --line:#1e293b;
+  --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e;
+  --crit:#ef4444; --high:#f97316; --med:#eab308; --info:#3b82f6;
+}
+* { box-sizing:border-box }
+body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--text) }
+header { padding:16px 20px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap }
+header h1 { margin:0; font-size:18px }
+header .tag { color:var(--muted); font-size:12px }
+main { max-width:1280px; margin:0 auto; padding:16px; display:grid; gap:16px }
+@media(min-width:900px){ main { grid-template-columns: 340px 1fr } aside{position:sticky; top:16px; align-self:start} }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px }
+label { font-size:13px; color:var(--muted); display:block; margin-bottom:6px }
+textarea { width:100%; min-height:120px; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font-family:ui-monospace,monospace; font-size:14px; resize:vertical }
+button { background:var(--accent); color:#04121f; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; width:100%; margin-top:10px }
+button:disabled { opacity:.6; cursor:wait }
+button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); font-weight:500 }
+.hint { font-size:12px; color:var(--muted); margin-top:8px }
+#glossary-search { width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0 }
+#terms { max-height:360px; overflow:auto; display:flex; flex-direction:column; gap:8px }
+.term { border:1px solid var(--line); border-radius:10px; padding:10px }
+.term b { cursor:pointer }
+.term .cit { font-size:13px; margin-top:6px }
+.term .law { font-size:12px; color:var(--muted); margin-top:6px; display:none }
+.term.open .law { display:block }
+.term .regs { font-size:11px; color:var(--accent); margin-top:4px }
+#status { font-size:13px; color:var(--muted); min-height:20px }
+.err { color:var(--crit); font-size:13px }
+#summary table { width:100%; border-collapse:collapse; font-size:13px }
+#summary th, #summary td { text-align:left; padding:8px; border-bottom:1px solid var(--line) }
+#summary th { color:var(--muted); font-weight:500 }
+.badge { display:inline-block; color:#0b1220; border-radius:999px; padding:2px 8px; font-size:11px; font-weight:700 }
+.problem { border-left:3px solid; border-radius:8px; padding:10px; margin:8px 0; background:var(--card2) }
+.problem .t { font-weight:600 }
+.problem .d { font-size:13px; margin-top:4px }
+.problem .l { font-size:12px; color:var(--muted); margin-top:4px }
+.problem .r { font-size:12px; color:var(--accent); margin-top:4px }
+#map { height:420px; border-radius:12px; border:1px solid var(--line); background:#0f172a }
+.kpis { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px }
+.kpi { background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:13px }
+.kpi b { display:block; font-size:18px }
+a { color:var(--accent) }
+</style>
+</head>
+<body>
+<header>
+  <h1>Законник · Кадастр</h1>
+  <span class="tag">ПКК/НСПД · подсветка проблем · справочник терминов</span>
+  <span style="flex:1"></span>
+  <a href="/api/glossary" target="_blank" class="tag">API</a>
+</header>
+<main>
+  <aside>
+    <div class="panel">
+      <label for="cns">Кадастровые номера (по одному или через пробел)</label>
+      <textarea id="cns" placeholder="50:14:0000000:156789
+50:14:0000000:156713"></textarea>
+      <button id="go">Проверить</button>
+      <div class="hint">Формат: XX:XX:XXXXXX(XXX):NNN. Можно вставить текст — номера извлекутся сами.</div>
+      <div id="status"></div>
+    </div>
+    <div class="panel">
+      <label>Справочник терминов</label>
+      <input id="glossary-search" placeholder="Поиск: ВРИ, арест, ЗОУИТ…">
+      <div id="terms"><div class="hint">Загрузка…</div></div>
+    </div>
+  </aside>
+  <section>
+    <div class="panel" id="results" hidden>
+      <div class="kpis" id="kpis"></div>
+      <div id="summary"></div>
+      <h3>Карта</h3>
+      <div id="map"></div>
+      <h3>Детали и проблемы</h3>
+      <div id="details"></div>
+    </div>
+    <div class="panel" id="empty">
+      <p>Введите кадастровые номера слева и нажмите «Проверить».</p>
+      <p class="hint">
+        Сервис обращается к публичной кадастровой карте НСПД. Аресты, ипотеки и сервитуты
+        в ПКК не публикуются — для них нужна выписка ЕГРН. Инструмент подсвечивает:
+        отсутствие границ, ВРИ, ЗОУИТ, наложения, красные линии, ООПТ, затопление, статус.
+      </p>
+    </div>
+  </section>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const SEV = {
+  critical: {c:'#ef4444', t:'Критично'},
+  high: {c:'#f97316', t:'Существенно'},
+  medium: {c:'#eab308', t:'Средне'},
+  info: {c:'#3b82f6', t:'Инфо'},
+  ok: {c:'#22c55e', t:'Норма'}
+};
+let map, layer;
+
+async function loadGlossary(q='') {
+  try {
+    const r = await fetch('/api/glossary');
+    const env = await r.json();
+    if (!env.ok) throw new Error(env.error?.message || 'ошибка');
+    let terms = env.data.terms || [];
+    if (q) {
+      q = q.toLowerCase();
+      terms = terms.filter(t =>
+        (t.title+' '+t.for_citizen+' '+t.for_lawyer+' '+t.code).toLowerCase().includes(q)
+      );
+    }
+    $('#terms').innerHTML = terms.map(t => `
+      <div class="term" data-code="${t.code}">
+        <b onclick="this.parentElement.classList.toggle('open')">${t.title}</b>
+        <div class="cit">${t.for_citizen}</div>
+        <div class="law"><b>Юристу:</b> ${t.for_lawyer}
+          ${t.regulations?.length ? `<div class="regs">Регламенты: ${t.regulations.join('; ')}</div>` : ''}
+        </div>
+      </div>
+    `).join('') || '<div class="hint">Не найдено</div>';
+  } catch(e) {
+    $('#terms').innerHTML = `<div class="err">${e.message}</div>`;
+  }
+}
+
+function geojsonFrom(run) {
+  const feats = [];
+  const colors = {
+    zouit:['#f97316',.25], red_line:['#ef4444',.35], oopt:['#22c55e',.25],
+    flood:['#06b6d4',.3], terr_zone:['#a855f7',.15], zu:['#64748b',.12], oks:['#334155',.2]
+  };
+  const push = (geom, props) => {
+    if (geom && geom.geojson) feats.push({type:'Feature', geometry:geom.geojson, properties:props});
+  };
+  for (const o of run.objects || []) {
+    push(o.geometry, {title:`${o.cad_number} — ${o.kind_title}`, color:SEV[o.max_severity]?.c || '#38bdf8', weight:4, fillOpacity:.25});
+    if (o.linked_zu) push(o.linked_zu.geometry, {title:`ЗУ ${o.linked_zu.cad_number}`, color:SEV[o.linked_zu.max_severity]?.c || '#38bdf8', weight:3, fillOpacity:.2});
+    for (const r of o.related || []) {
+      if (!r.geometry) continue;
+      const [color, op] = colors[r.kind] || ['#94a3b8', .15];
+      push(r.geometry, {title:r.title || r.cad_number || r.kind, color, weight:2, fillOpacity:op, dash: (r.kind==='zouit'||r.kind==='red_line')?1:0});
+    }
+  }
+  return {type:'FeatureCollection', features:feats};
+}
+
+function renderProblems(list) {
+  if (!list?.length) return '<p class="hint">Проблем не выявлено.</p>';
+  return list.map(p => {
+    const s = SEV[p.severity] || SEV.info;
+    return `<div class="problem" style="border-color:${s.c}">
+      <div class="t"><span class="badge" style="background:${s.c}">${s.t}</span> ${p.title}</div>
+      <div class="d">${p.detail}</div>
+      ${p.legal_note ? `<div class="l">Юристу: ${p.legal_note}</div>` : ''}
+      ${p.recommendation ? `<div class="r">Что делать: ${p.recommendation}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function render(run) {
+  $('#empty').hidden = true;
+  $('#results').hidden = false;
+  const objs = run.objects || [];
+  const crit = objs.filter(o=>o.counts?.critical).length;
+  const high = objs.filter(o=>o.counts?.high).length;
+  $('#kpis').innerHTML = `
+    <div class="kpi"><b>${objs.length}</b>объектов</div>
+    <div class="kpi"><b style="color:var(--crit)">${crit}</b>с критичными</div>
+    <div class="kpi"><b style="color:var(--high)">${high}</b>с существенными</div>`;
+  $('#summary').innerHTML = `<table>
+    <thead><tr><th>КН</th><th>Тип</th><th>Адрес</th><th>Статус</th><th>Проблемы</th></tr></thead>
+    <tbody>${objs.map(o=>{
+      const c=o.counts||{}; const s=SEV[o.max_severity]||SEV.ok;
+      const n=(c.critical||0)+(c.high||0)+(c.medium||0)+(c.info||0);
+      return `<tr>
+        <td>${o.cad_number}</td><td>${o.kind_title||''}</td>
+        <td>${o.address||o.linked_zu?.address||'—'}</td>
+        <td>${o.status||'—'}</td>
+        <td><span class="badge" style="background:${s.c}">${n? n+' шт.': 'ок'}</span></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+  $('#details').innerHTML = objs.map(o=>{
+    const s=SEV[o.max_severity]||SEV.ok;
+    return `<div class="panel" style="margin-top:12px">
+      <h3>${o.cad_number} <span class="badge" style="background:${s.c}">${s.t}</span></h3>
+      <p class="hint">${o.kind_title} · ${o.address||''}</p>
+      ${o.error?`<p class="err">${o.error}</p>`:''}
+      <div><b>Статус:</b> ${o.status||'—'} · <b>ВРИ:</b> ${o.vri||'—'} ·
+           <b>КС:</b> ${o.cost_value? Number(o.cost_value).toLocaleString('ru-RU')+' руб.':'—'} ·
+           <b>Площадь:</b> ${o.area? Number(o.area).toLocaleString('ru-RU')+' м²':'—'}</div>
+      <h4>Проблемы объекта</h4>
+      ${renderProblems(o.problems)}
+      ${o.linked_zu ? `<h4>Связанный ЗУ ${o.linked_zu.cad_number}</h4>${renderProblems(o.linked_zu.problems)}`:''}
+    </div>`;
+  }).join('');
+
+  if (!map) {
+    map = L.map('map', {preferCanvas:true});
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OSM'}).addTo(map);
+  }
+  if (layer) map.removeLayer(layer);
+  layer = L.geoJSON(geojsonFrom(run), {
+    style: f => ({color:f.properties.color, weight:f.properties.weight||2, fillColor:f.properties.color, fillOpacity:f.properties.fillOpacity??.2, dashArray:f.properties.dash?'4 4':null}),
+    onEachFeature: (f,l)=>{ const t=f.properties.title||''; l.bindPopup('<b>'+t+'</b>'); l.bindTooltip(t,{sticky:true}); }
+  }).addTo(map);
+  try { map.fitBounds(layer.getBounds(), {padding:[20,20]}); } catch(e) { map.setView([55.75,37.62],10); }
+  setTimeout(()=>map.invalidateSize(), 50);
+}
+
+async function analyze() {
+  const text = $('#cns').value;
+  const nums = (text.match(/\d{2}:\d{2}:\d{6,7}:\d+/g) || []);
+  if (!nums.length) { $('#status').innerHTML = '<span class="err">Введите кадастровые номера</span>'; return; }
+  $('#go').disabled = true;
+  $('#status').textContent = 'Запрос к НСПД… это может занять 10–40 секунд';
+  try {
+    const r = await fetch('/api/analyze', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({numbers: nums})
+    });
+    const env = await r.json();
+    if (!env.ok) throw new Error(env.error?.message || 'Ошибка анализа');
+    render(env.data);
+    if (env.data.warnings?.length) {
+      $('#status').innerHTML = env.data.warnings.map(w=>`<span class="err">${w}</span>`).join('<br>');
+    } else {
+      $('#status').textContent = 'Готово · ' + new Date().toLocaleTimeString('ru-RU');
+    }
+  } catch(e) {
+    $('#status').innerHTML = `<span class="err">${e.message}</span>`;
+  } finally {
+    $('#go').disabled = false;
+  }
+}
+
+$('#go').addEventListener('click', analyze);
+$('#glossary-search').addEventListener('input', e=>loadGlossary(e.target.value.trim()));
+loadGlossary();
+</script>
+</body>
+</html>
