@@ -377,7 +377,8 @@ footer {{ color:var(--muted); font-size:12px; padding:20px; text-align:center }}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {{
-  var map = L.map('map', {{ preferCanvas: true }});
+  var map = L.map('map', {{ preferCanvas: true, attributionControl: false }});
+  L.control.attribution({{prefix: false}}).addTo(map);
   var osm = L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{ maxZoom: 19, attribution: '© OpenStreetMap' }});
   osm.addTo(map);
   L.control.layers({{'OpenStreetMap': osm}}).addTo(map);

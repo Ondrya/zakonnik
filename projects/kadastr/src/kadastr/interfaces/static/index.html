@@ -389,8 +389,9 @@ function render(run) {
   applyFilter();
 
   if (!map) {
-    map = L.map('map', {preferCanvas:true});
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OSM'}).addTo(map);
+    map = L.map('map', {preferCanvas:true, attributionControl:false});
+    L.control.attribution({prefix:false}).addTo(map);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(map);
   }
   if (layer) map.removeLayer(layer);
   layer = L.geoJSON(geojsonFrom(run), {
