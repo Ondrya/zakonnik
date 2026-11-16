@@ -6,11 +6,11 @@ import re
 from typing import Iterable
 
 from ..domain.entities import AnalysisRun, CadastralObject
-from ..domain.gateways import CadastralGateway, GlossaryRepository
+from ..domain.gateways import CadastralGateway, GlossaryRepository, ObjectCacheRepository
 from ..domain.glossary import Glossary
 from ..domain.history import HistoryItem, HistoryRepository
 from ..domain.problems import ProblemPolicy
-from ..domain.value_objects import CadastralNumber
+from ..domain.value_objects import CadastralNumber, ObjectKind
 from .dtos import Envelope, fail, object_summary, ok
 
 
@@ -61,12 +61,20 @@ class AnalyzeCadastralObjects:
         gateway: CadastralGateway,
         policy: ProblemPolicy | None = None,
         history: HistoryRepository | None = None,
+        cache: ObjectCacheRepository | None = None,
     ):
         self.gateway = gateway
         self.policy = policy or ProblemPolicy()
         self.history = history
+        self.cache = cache
 
-    def execute(self, numbers: Iterable[str], *, names: dict[str, str] | None = None) -> AnalysisRun:
+    def execute(
+        self,
+        numbers: Iterable[str],
+        *,
+        names: dict[str, str] | None = None,
+        refresh: bool = False,
+    ) -> AnalysisRun:
         run = AnalysisRun(created_at=dt.datetime.now().isoformat(timespec="seconds"))
         names = names or {}
         unique: list[str] = []
@@ -75,8 +83,27 @@ class AnalyzeCadastralObjects:
             if cn and cn not in unique:
                 unique.append(cn)
         for cn in unique:
+            if self.cache and not refresh:
+                snap = self.cache.get(cn)
+                if snap:
+                    snap = dict(snap)
+                    snap["_from_cache"] = True
+                    if names.get(cn):
+                        snap["name"] = names[cn]
+                    run.cached_objects.append(snap)
+                    if self.history:
+                        try:
+                            self.history.upsert(HistoryItem(number=CadastralNumber(cn), name=names.get(cn)))
+                        except Exception:
+                            pass
+                    continue
             obj = self._analyze_one(cn, name=names.get(cn))
             run.objects.append(obj)
+            if self.cache and obj.found:
+                try:
+                    self.cache.put(cn, obj.to_dict())
+                except Exception:
+                    pass
             if self.history:
                 try:
                     self.history.upsert(
@@ -92,16 +119,21 @@ class AnalyzeCadastralObjects:
         return run
 
     def execute_envelope(
-        self, numbers: Iterable[str], *, names: dict[str, str] | None = None
+        self,
+        numbers: Iterable[str],
+        *,
+        names: dict[str, str] | None = None,
+        refresh: bool = False,
     ) -> Envelope:
         try:
-            run = self.execute(numbers, names=names)
+            run = self.execute(numbers, names=names, refresh=refresh)
         except Exception as e:
             return fail("analyze_failed", str(e))
         return ok(
             run.to_dict(),
             generated_at=run.created_at,
-            objects=len(run.objects),
+            objects=len(run.objects) + len(run.cached_objects),
+            from_cache=len(run.cached_objects),
             source="nspd",
         )
 
@@ -251,3 +283,64 @@ class ManageHistory:
         if not deleted:
             return fail("not_in_history", f"Нет записи в истории: {cn}")
         return ok({"deleted": cn})
+
+
+class SearchByText:
+    """Поиск по КН, адресу или названию: подсказки для UI (issue #6)."""
+
+    def __init__(self, gateway: CadastralGateway):
+        self.gateway = gateway
+
+    def execute(self, query: str, *, limit: int = 8) -> dict:
+        query = (query or "").strip()
+        if not query:
+            return {"objects": [], "places": []}
+        if CN_RE.fullmatch(query):
+            return {
+                "objects": [{"cn": query, "title": query, "address": None, "kind": None}],
+                "places": [],
+            }
+        objects: list[dict] = []
+        feats = self.gateway.search_text(query) or []
+        seen: set[str] = set()
+        for f in feats:
+            props = f.get("properties") or {}
+            opts = props.get("options") or {}
+            cad = opts.get("cad_num") or props.get("label")
+            if not cad or cad in seen:
+                continue
+            seen.add(cad)
+            objects.append(
+                {
+                    "cn": str(cad),
+                    "title": opts.get("building_name")
+                    or opts.get("readable_address")
+                    or str(props.get("label") or cad),
+                    "address": opts.get("readable_address"),
+                    "kind": props.get("categoryName"),
+                }
+            )
+            if len(objects) >= limit:
+                break
+        places: list[dict] = []
+        try:
+            geo = self.gateway.geocode(query) or []
+        except Exception:
+            geo = []
+        for it in geo[:5]:
+            pt = it.get("point") or [None, None]
+            places.append(
+                {
+                    "address": it.get("address") or "",
+                    "lon": pt[0],
+                    "lat": pt[1],
+                    "source": it.get("source"),
+                }
+            )
+        return {"objects": objects, "places": places}
+
+    def execute_envelope(self, query: str) -> Envelope:
+        try:
+            return ok(self.execute(query))
+        except Exception as e:
+            return fail("search_failed", str(e))

@@ -136,6 +136,13 @@ class NspdGateway(CadastralGateway):
             )
         return out
 
+    def geocode(self, address: str) -> list[dict]:
+        return self.http.geocode(address)
+
+    def search_text(self, query: str) -> list[dict]:
+        """Поиск НСПД по произвольной строке (адрес, КН, название)."""
+        return self.http.search(query, thematic_search_id=1) or []
+
     def close(self) -> None:
         # urllib opener не требует close
         return None

@@ -238,6 +238,20 @@ class TestHistory(unittest.TestCase):
         self.assertTrue(env.ok)
 
 
+class TestCache(unittest.TestCase):
+    def test_put_get(self):
+        import tempfile
+        from pathlib import Path
+        from kadastr.infrastructure.cache_repo import JsonCacheRepository
+        c = JsonCacheRepository(Path(tempfile.mkdtemp()) / "cache.json", ttl_seconds=3600)
+        snap = {"cad_number": "50:14:0000000:156789", "found": True}
+        c.put("50:14:0000000:156789", snap)
+        self.assertEqual(c.get("50:14:0000000:156789"), snap)
+        self.assertIsNone(c.get("99:99:0000000:1"))
+        c.invalidate("50:14:0000000:156789")
+        self.assertIsNone(c.get("50:14:0000000:156789"))
+
+
 class TestGlossary(unittest.TestCase):
     def test_load_json(self):
         repo = JsonGlossaryRepository(ROOT / "data" / "glossary.json")

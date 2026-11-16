@@ -37,6 +37,15 @@ class CadastralGateway(Protocol):
 
 
 @runtime_checkable
+class ObjectCacheRepository(Protocol):
+    def get(self, cn: str) -> dict | None: ...
+
+    def put(self, cn: str, snapshot: dict) -> None: ...
+
+    def invalidate(self, cn: str) -> None: ...
+
+
+@runtime_checkable
 class GlossaryRepository(Protocol):
     def load(self) -> list[dict]:
         """Список терминов: code, title, for_citizen, for_lawyer, regulations, related_problems."""

@@ -17,6 +17,8 @@ output/
 # Локальная история поиска (пользовательские данные)
 data/history.json
 projects/kadastr/data/history.json
+data/cache.json
+projects/kadastr/data/cache.json
 
 # IDE / OS
 .idea/

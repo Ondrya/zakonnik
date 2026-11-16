@@ -150,10 +150,12 @@ class AnalysisRun:
     created_at: str
     objects: list[CadastralObject] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    cached_objects: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "created_at": self.created_at,
             "warnings": self.warnings,
             "objects": [o.to_dict() for o in self.objects],
+            "cached_objects": self.cached_objects,
         }

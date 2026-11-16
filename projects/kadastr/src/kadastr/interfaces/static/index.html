@@ -25,6 +25,13 @@ button { background:var(--accent); color:#04121f; border:0; border-radius:10px; 
 button:disabled { opacity:.6; cursor:wait }
 button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); font-weight:500 }
 .hint { font-size:12px; color:var(--muted); margin-top:8px }
+.row { display:flex; gap:8px; align-items:center }
+.row label { margin:0; display:flex; gap:6px; align-items:center; cursor:pointer }
+#sugg { position:relative }
+#sugg-list { position:absolute; z-index:500; left:0; right:0; background:var(--card); border:1px solid var(--line); border-radius:10px; max-height:240px; overflow:auto; display:none }
+#sugg-list .sg { padding:8px 10px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line) }
+#sugg-list .sg:hover { background:var(--card2) }
+#sugg-list .sg .cn { font-family:ui-monospace,monospace; color:var(--accent); font-size:12px }
 #glossary-search { width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0 }
 #terms, #history { max-height:320px; overflow:auto; display:flex; flex-direction:column; gap:8px }
 .term, .hitem { border:1px solid var(--line); border-radius:10px; padding:10px }
@@ -39,7 +46,6 @@ button.ghost { background:transparent; color:var(--accent); border:1px solid var
 .hitem .cn { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted) }
 .hitem .meta { font-size:11px; color:var(--muted) }
 .hitem button { width:auto; margin:0; padding:4px 8px; font-size:12px; font-weight:500; background:var(--card2); color:var(--muted); border:1px solid var(--line) }
-.hitem button:hover { color:var(--text) }
 .hitem .grow { flex:1; min-width:0 }
 #status { font-size:13px; color:var(--muted); min-height:20px }
 .err { color:var(--crit); font-size:13px }
@@ -60,27 +66,38 @@ a { color:var(--accent) }
 .tabs { display:flex; gap:6px; margin-bottom:8px }
 .tabs button { width:auto; margin:0; padding:6px 10px; font-size:12px; background:var(--card2); color:var(--muted); border:1px solid var(--line) }
 .tabs button.active { background:var(--accent); color:#04121f; border-color:var(--accent) }
+#filters { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 }
+#filters button { width:auto; margin:0; padding:4px 10px; font-size:12px; background:var(--card2); color:var(--muted); border:1px solid var(--line) }
+#filters button.active { color:#04121f; font-weight:700 }
 #rename-dialog { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:1000 }
 #rename-dialog .box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; width:min(400px, 90vw) }
 #rename-dialog input { width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0 }
+.leaflet-popup-content b { color:#0f172a }
+.pop-btn { display:inline-block; margin-top:6px; padding:4px 8px; background:#38bdf8; color:#04121f; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px }
+.from-cache { color:var(--muted); font-size:11px }
 </style>
 </head>
 <body>
 <header>
   <h1>Законник · Кадастр</h1>
-  <span class="tag">ПКК/НСПД · история · имена участков · справочник</span>
+  <span class="tag">ПКК/НСПД · история · адрес · кэш · фильтры</span>
   <span style="flex:1"></span>
   <a href="/api/glossary" target="_blank" class="tag">API</a>
 </header>
 <main>
   <aside>
     <div class="panel">
-      <label for="cns">Кадастровые номера (можно с именем)</label>
-      <textarea id="cns" placeholder="50:14:0000000:156789 | мой участок
-50:14:0000000:156713 | дом родителей
-50:14:0000000:156800 | лот 15"></textarea>
+      <label for="cns">Кадастровый номер или адрес</label>
+      <div id="sugg">
+        <textarea id="cns" placeholder="50:14:0000000:156789 | мой участок
+или: Москва, Старая площадь, 4"></textarea>
+        <div id="sugg-list"></div>
+      </div>
       <button id="go">Проверить</button>
-      <div class="hint">Формат: <code>КН</code> или <code>КН | имя</code>. Имя можно задать и потом в истории.</div>
+      <div class="row">
+        <label><input type="checkbox" id="refresh"> Принудительно обновить (мимо кэша)</label>
+      </div>
+      <div class="hint">Имя: <code>КН | мой участок</code>. Адрес — просто начните печатать, подсказки ниже поля.</div>
       <div id="status"></div>
     </div>
     <div class="panel">
@@ -89,7 +106,7 @@ a { color:var(--accent) }
         <button id="tab-glos">Справочник</button>
       </div>
       <div id="pane-hist">
-        <div id="history"><div class="hint">Пусто. Проверьте участок — появится здесь.</div></div>
+        <div id="history"><div class="hint">Пусто.</div></div>
       </div>
       <div id="pane-glos" hidden>
         <input id="glossary-search" placeholder="Поиск: ВРИ, арест, ЗОУИТ…">
@@ -104,14 +121,21 @@ a { color:var(--accent) }
       <h3>Карта</h3>
       <div id="map"></div>
       <h3>Детали и проблемы</h3>
+      <div id="filters">
+        <button data-f="all" class="active">Все</button>
+        <button data-f="critical" style="border-color:var(--crit)">Критично</button>
+        <button data-f="high" style="border-color:var(--high)">Существенно</button>
+        <button data-f="medium" style="border-color:var(--med)">Средне</button>
+        <button data-f="info" style="border-color:var(--info)">Инфо</button>
+      </div>
       <div id="details"></div>
     </div>
     <div class="panel" id="empty">
-      <p>Введите кадастровые номера слева и нажмите «Проверить».</p>
+      <p>Введите кадастровый номер или адрес. Примеры:</p>
       <p class="hint">
-        Присвойте участку имя: <code>50:14:0000000:156789 | мой участок</code>.
-        История сохраняется в браузере проекта (файл data/history.json) и доступна для повторного поиска в один клик.
-        Аресты, ипотеки, сервитуты в ПКК не публикуются — для них нужна выписка ЕГРН.
+        <code>50:14:0000000:156789 | мой участок</code><br>
+        <code>Москва, Старая площадь, 4</code><br>
+        Повторные проверки берутся из кэша (24 ч). Галочка «принудительно обновить» — свежие данные из НСПД.
       </p>
     </div>
   </section>
@@ -138,9 +162,10 @@ const SEV = {
   info: {c:'#3b82f6', t:'Инфо'},
   ok: {c:'#22c55e', t:'Норма'}
 };
-let map, layer, renameCn = null;
+let map, layer, renameCn = null, sevFilter = 'all', lastRun = null;
+const CN_RE = /^\d{2}:\d{2}:\d{6,7}:\d+$/;
 
-/* ---- глоссарий ---- */
+/* глоссарий */
 async function loadGlossary(q='') {
   try {
     const r = await fetch('/api/glossary');
@@ -152,44 +177,35 @@ async function loadGlossary(q='') {
       terms = terms.filter(t => (t.title+' '+t.for_citizen+' '+t.for_lawyer+' '+t.code).toLowerCase().includes(q));
     }
     $('#terms').innerHTML = terms.map(t => `
-      <div class="term" data-code="${t.code}">
+      <div class="term">
         <b onclick="this.parentElement.classList.toggle('open')">${t.title}</b>
         <div class="cit">${t.for_citizen}</div>
         <div class="law"><b>Юристу:</b> ${t.for_lawyer}
           ${t.regulations?.length ? `<div class="regs">Регламенты: ${t.regulations.join('; ')}</div>` : ''}
         </div>
       </div>`).join('') || '<div class="hint">Не найдено</div>';
-  } catch(e) {
-    $('#terms').innerHTML = `<div class="err">${e.message}</div>`;
-  }
+  } catch(e) { $('#terms').innerHTML = `<div class="err">${e.message}</div>`; }
 }
 
-/* ---- история ---- */
+/* история */
 async function loadHistory() {
   try {
     const r = await fetch('/api/history');
     const env = await r.json();
     if (!env.ok) throw new Error(env.error?.message || 'ошибка');
     const items = env.data.items || [];
-    if (!items.length) {
-      $('#history').innerHTML = '<div class="hint">Пусто. Проверьте участок — появится здесь.</div>';
-      return;
-    }
-    $('#history').innerHTML = items.map(i => `
+    $('#history').innerHTML = items.length ? items.map(i => `
       <div class="hitem" data-cn="${i.cn}" data-name="${(i.name||'').replace(/"/g,'&quot;')}">
         <div class="grow" onclick="analyzeOne('${i.cn}')">
-          <div class="nm">${i.name ? i.name : '<i>без имени</i>'}</div>
+          <div class="nm">${i.name || '<i>без имени</i>'}</div>
           <div class="cn">${i.cn}</div>
           <div class="meta">проверок: ${i.runs||0}${i.last_used_at ? ' · '+i.last_used_at.slice(0,10) : ''}</div>
         </div>
-        <button onclick="openRename('${i.cn}', this.closest('.hitem').dataset.name)" title="Переименовать">✎</button>
-        <button onclick="delHist('${i.cn}')" title="Удалить">✕</button>
-      </div>`).join('');
-  } catch(e) {
-    $('#history').innerHTML = `<div class="err">${e.message}</div>`;
-  }
+        <button onclick="openRename('${i.cn}', this.closest('.hitem').dataset.name)">✎</button>
+        <button onclick="delHist('${i.cn}')">✕</button>
+      </div>`).join('') : '<div class="hint">Пусто. Проверьте участок.</div>';
+  } catch(e) { $('#history').innerHTML = `<div class="err">${e.message}</div>`; }
 }
-
 function openRename(cn, current) {
   renameCn = cn;
   $('#rename-title').textContent = 'Имя для ' + cn;
@@ -200,45 +216,91 @@ function openRename(cn, current) {
 $('#rename-cancel').addEventListener('click', () => $('#rename-dialog').style.display = 'none');
 $('#rename-save').addEventListener('click', async () => {
   if (!renameCn) return;
-  const name = $('#rename-input').value.trim();
-  await fetch('/api/history', {
-    method:'PATCH', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({cn: renameCn, name})
-  });
-  $('#rename-dialog').style.display = 'none';
-  loadHistory();
+  await fetch('/api/history', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({cn: renameCn, name: $('#rename-input').value.trim()})});
+  $('#rename-dialog').style.display = 'none'; loadHistory();
 });
 $('#rename-dialog').addEventListener('click', e => { if (e.target.id==='rename-dialog') $('#rename-dialog').style.display='none'; });
-
 async function delHist(cn) {
   if (!confirm('Удалить из истории ' + cn + '?')) return;
   await fetch('/api/history?cn=' + encodeURIComponent(cn), {method:'DELETE'});
   loadHistory();
 }
+function analyzeOne(cn) { $('#cns').value = cn; analyze(); }
 
-function analyzeOne(cn) {
-  $('#cns').value = cn;
-  analyze();
+/* подсказки адрес/КН */
+let sugTimer = null;
+$('#cns').addEventListener('input', () => {
+  clearTimeout(sugTimer);
+  sugTimer = setTimeout(async () => {
+    const q = $('#cns').value.trim().split('\n').pop().split('|')[0].trim();
+    const box = $('#sugg-list');
+    if (!q || CN_RE.test(q) || q.length < 4) { box.style.display='none'; return; }
+    try {
+      const r = await fetch('/api/search?q=' + encodeURIComponent(q));
+      const env = await r.json();
+      if (!env.ok) { box.style.display='none'; return; }
+      const objs = env.data.objects || [], places = env.data.places || [];
+      if (!objs.length && !places.length) { box.style.display='none'; return; }
+      box.innerHTML =
+        objs.map(o => `<div class="sg" onclick="pickSugg('${o.cn}')"><div class="cn">${o.cn}</div>${o.title||''}</div>`).join('') +
+        places.map(p => `<div class="sg" onclick="$('#cns').value='${(p.address||'').replace(/'/g,"\\'")}'; $('#sugg-list').style.display='none'">${p.address}</div>`).join('');
+      box.style.display = 'block';
+    } catch { box.style.display='none'; }
+  }, 400);
+});
+function pickSugg(cn) { $('#cns').value = cn; $('#sugg-list').style.display='none'; analyze(); }
+document.addEventListener('click', e => { if (!e.target.closest('#sugg')) $('#sugg-list').style.display='none'; });
+
+/* фильтр #1 */
+document.querySelectorAll('#filters button').forEach(b => b.addEventListener('click', () => {
+  sevFilter = b.dataset.f;
+  document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('active', x===b));
+  applyFilter();
+}));
+function applyFilter() {
+  document.querySelectorAll('#details .problem').forEach(el => {
+    el.style.display = (sevFilter==='all' || el.dataset.sev===sevFilter) ? '' : 'none';
+  });
+  document.querySelectorAll('#details .obj-problems').forEach(box => {
+    const vis = [...box.querySelectorAll('.problem')].some(el => el.style.display !== 'none');
+    box.style.display = vis ? '' : 'none';
+  });
 }
 
-/* ---- анализ ---- */
+/* карта #3 */
+function popupHtml(o) {
+  const s = SEV[o.max_severity] || SEV.ok;
+  const tops = (o.problems||[]).filter(p=>['critical','high'].includes(p.severity)).slice(0,4);
+  const rows = tops.length ? tops.map(p=>`<div>• ${p.title}</div>`).join('') : '<div>критичных проблем не видно</div>';
+  const name = o.name ? o.name : (o.cad_number||'');
+  return `<div style="min-width:180px">
+    <b>${name}</b><br>
+    <span class="badge" style="background:${s.c}">${s.t}</span>
+    <div style="margin:6px 0">${rows}</div>
+    <span class="pop-btn" onclick="scrollToObj('${o.cad_number||o.query_cn||''}')">Подробнее →</span>
+  </div>`;
+}
+function scrollToObj(cn) {
+  const el = document.getElementById('obj-' + String(cn).replace(/:/g,'_'));
+  if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 function geojsonFrom(run) {
   const feats = [];
   const colors = {
     zouit:['#f97316',.25], red_line:['#ef4444',.35], oopt:['#22c55e',.25],
     flood:['#06b6d4',.3], terr_zone:['#a855f7',.15], zu:['#64748b',.12], oks:['#334155',.2]
   };
-  const push = (geom, props) => {
-    if (geom && geom.geojson) feats.push({type:'Feature', geometry:geom.geojson, properties:props});
-  };
-  for (const o of run.objects || []) {
+  const push = (geom, props) => { if (geom && geom.geojson) feats.push({type:'Feature', geometry:geom.geojson, properties:props}); };
+  const all = [...(run.objects||[]), ...(run.cached_objects||[])];
+  for (const o of all) {
     const label = o.name ? `${o.name} (${o.cad_number})` : `${o.cad_number} — ${o.kind_title}`;
-    push(o.geometry, {title:label, color:SEV[o.max_severity]?.c || '#38bdf8', weight:4, fillOpacity:.25});
-    if (o.linked_zu) push(o.linked_zu.geometry, {title:`ЗУ ${o.linked_zu.cad_number}`, color:SEV[o.linked_zu.max_severity]?.c || '#38bdf8', weight:3, fillOpacity:.2});
+    push(o.geometry, {title:label, color:SEV[o.max_severity]?.c || '#38bdf8', weight:4, fillOpacity:.25, kind:'object', cn:o.cad_number});
+    if (o.linked_zu) push(o.linked_zu.geometry, {title:`ЗУ ${o.linked_zu.cad_number}`, color:SEV[o.linked_zu.max_severity]?.c || '#38bdf8', weight:3, fillOpacity:.2, kind:'object', cn:o.linked_zu.cad_number});
     for (const r of o.related || []) {
       if (!r.geometry) continue;
       const [color, op] = colors[r.kind] || ['#94a3b8', .15];
-      push(r.geometry, {title:r.title || r.cad_number || r.kind, color, weight:2, fillOpacity:op, dash: (r.kind==='zouit'||r.kind==='red_line')?1:0});
+      push(r.geometry, {title:r.title || r.cad_number || r.kind, color, weight:2, fillOpacity:op, dash:(r.kind==='zouit'||r.kind==='red_line')?1:0, kind:r.kind});
     }
   }
   return {type:'FeatureCollection', features:feats};
@@ -248,7 +310,7 @@ function renderProblems(list) {
   if (!list?.length) return '<p class="hint">Проблем не выявлено.</p>';
   return list.map(p => {
     const s = SEV[p.severity] || SEV.info;
-    return `<div class="problem" style="border-color:${s.c}">
+    return `<div class="problem" data-sev="${p.severity}" style="border-color:${s.c}">
       <div class="t"><span class="badge" style="background:${s.c}">${s.t}</span> ${p.title}</div>
       <div class="d">${p.detail}</div>
       ${p.legal_note ? `<div class="l">Юристу: ${p.legal_note}</div>` : ''}
@@ -260,19 +322,21 @@ function renderProblems(list) {
 function render(run) {
   $('#empty').hidden = true;
   $('#results').hidden = false;
-  const objs = run.objects || [];
+  const objs = [...(run.objects||[]), ...(run.cached_objects||[])];
   const crit = objs.filter(o=>o.counts?.critical).length;
   const high = objs.filter(o=>o.counts?.high).length;
+  const nCache = (run.cached_objects||[]).length;
   $('#kpis').innerHTML = `
     <div class="kpi"><b>${objs.length}</b>объектов</div>
     <div class="kpi"><b style="color:var(--crit)">${crit}</b>с критичными</div>
-    <div class="kpi"><b style="color:var(--high)">${high}</b>с существенными</div>`;
+    <div class="kpi"><b style="color:var(--high)">${high}</b>с существенными</div>
+    ${nCache ? `<div class="kpi"><b>${nCache}</b>из кэша</div>` : ''}`;
   $('#summary').innerHTML = `<table>
-    <thead><tr><th>Объект</th><th>КН</th><th>Адрес</th><th>Статус</th><th>Проблемы</th></tr></thead>
+    <thead><tr><th>Объект</th><th>Тип</th><th>Адрес</th><th>Статус</th><th>Проблемы</th></tr></thead>
     <tbody>${objs.map(o=>{
       const c=o.counts||{}; const s=SEV[o.max_severity]||SEV.ok;
       const n=(c.critical||0)+(c.high||0)+(c.medium||0)+(c.info||0);
-      const title = o.name ? `${o.name}<div class="hint">${o.cad_number}</div>` : o.cad_number;
+      const title = o.name ? `${o.name}<div class="hint">${o.cad_number}${o._from_cache?' · кэш':''}</div>` : `${o.cad_number}${o._from_cache?' · кэш':''}`;
       return `<tr>
         <td>${title}</td><td>${o.kind_title||''}</td>
         <td>${o.address||o.linked_zu?.address||'—'}</td>
@@ -284,18 +348,20 @@ function render(run) {
   $('#details').innerHTML = objs.map(o=>{
     const s=SEV[o.max_severity]||SEV.ok;
     const heading = o.name ? `${o.name} · ${o.cad_number}` : o.cad_number;
-    return `<div class="panel" style="margin-top:12px">
-      <h3>${heading} <span class="badge" style="background:${s.c}">${s.t}</span></h3>
+    return `<div class="panel" style="margin-top:12px" id="obj-${String(o.cad_number).replace(/:/g,'_')}">
+      <h3>${heading} <span class="badge" style="background:${s.c}">${s.t}</span>
+        ${o._from_cache?'<span class="from-cache">из кэша</span>':''}</h3>
       <p class="hint">${o.kind_title} · ${o.address||''}</p>
       ${o.error?`<p class="err">${o.error}</p>`:''}
       <div><b>Статус:</b> ${o.status||'—'} · <b>ВРИ:</b> ${o.vri||'—'} ·
            <b>КС:</b> ${o.cost_value? Number(o.cost_value).toLocaleString('ru-RU')+' руб.':'—'} ·
            <b>Площадь:</b> ${o.area? Number(o.area).toLocaleString('ru-RU')+' м²':'—'}</div>
       <h4>Проблемы объекта</h4>
-      ${renderProblems(o.problems)}
-      ${o.linked_zu ? `<h4>Связанный ЗУ ${o.linked_zu.cad_number}</h4>${renderProblems(o.linked_zu.problems)}`:''}
+      <div class="obj-problems">${renderProblems(o.problems)}</div>
+      ${o.linked_zu ? `<h4>Связанный ЗУ ${o.linked_zu.cad_number}</h4><div class="obj-problems">${renderProblems(o.linked_zu.problems)}</div>`:''}
     </div>`;
   }).join('');
+  applyFilter();
 
   if (!map) {
     map = L.map('map', {preferCanvas:true});
@@ -304,7 +370,16 @@ function render(run) {
   if (layer) map.removeLayer(layer);
   layer = L.geoJSON(geojsonFrom(run), {
     style: f => ({color:f.properties.color, weight:f.properties.weight||2, fillColor:f.properties.color, fillOpacity:f.properties.fillOpacity??.2, dashArray:f.properties.dash?'4 4':null}),
-    onEachFeature: (f,l)=>{ const t=f.properties.title||''; l.bindPopup('<b>'+t+'</b>'); l.bindTooltip(t,{sticky:true}); }
+    onEachFeature: (f,l) => {
+      const p = f.properties || {};
+      if (p.kind === 'object') {
+        const o = [...(run.objects||[]), ...(run.cached_objects||[])].find(x => x.cad_number === p.cn);
+        l.bindPopup(popupHtml(o || {cad_number:p.cn, max_severity:'info', problems:[]}), {maxWidth:280});
+      } else {
+        l.bindPopup('<b>' + (p.title||'') + '</b>');
+      }
+      l.bindTooltip(p.title||'', {sticky:true});
+    }
   }).addTo(map);
   try { map.fitBounds(layer.getBounds(), {padding:[20,20]}); } catch(e) { map.setView([55.75,37.62],10); }
   setTimeout(()=>map.invalidateSize(), 50);
@@ -312,29 +387,32 @@ function render(run) {
 
 async function analyze() {
   const text = $('#cns').value;
-  // парсим КН | имя
   const items = [];
   for (const line of text.split(/[\n;]+/)) {
     const m = line.match(/(\d{2}:\d{2}:\d{6,7}:\d+)\s*(?:[|\-–—]\s*(.+))?/);
     if (m) items.push({cn: m[1], name: (m[2]||'').trim() || null});
   }
-  if (!items.length) { $('#status').innerHTML = '<span class="err">Введите кадастровые номера</span>'; return; }
+  const raw = text.trim();
+  const isAddr = !CN_RE.test(raw.split('|')[0].trim()) && raw && !items.length;
+  if (!items.length && !isAddr) { $('#status').innerHTML = '<span class="err">Введите КН или адрес</span>'; return; }
   $('#go').disabled = true;
-  $('#status').textContent = 'Запрос к НСПД… это может занять 10–40 секунд';
+  $('#status').textContent = 'Запрос к НСПД…';
   try {
-    const r = await fetch('/api/analyze', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({numbers: items})
-    });
+    let payload;
+    if (isAddr) {
+      const r = await fetch('/api/search?q=' + encodeURIComponent(raw));
+      const env = await r.json();
+      if (!env.ok || !(env.data.objects||[]).length) throw new Error('По адресу не найдены кадастровые объекты');
+      payload = {numbers: env.data.objects.slice(0,5).map(o=>({cn:o.cn}))};
+    } else {
+      payload = {numbers: items, refresh: $('#refresh').checked};
+    }
+    const r = await fetch('/api/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const env = await r.json();
     if (!env.ok) throw new Error(env.error?.message || 'Ошибка анализа');
     render(env.data);
     loadHistory();
-    if (env.data.warnings?.length) {
-      $('#status').innerHTML = env.data.warnings.map(w=>`<span class="err">${w}</span>`).join('<br>');
-    } else {
-      $('#status').textContent = 'Готово · ' + new Date().toLocaleTimeString('ru-RU');
-    }
+    $('#status').textContent = 'Готово · ' + new Date().toLocaleTimeString('ru-RU') + (env.meta.from_cache ? ' · из кэша: '+env.meta.from_cache : '');
   } catch(e) {
     $('#status').innerHTML = `<span class="err">${e.message}</span>`;
   } finally {
@@ -352,9 +430,7 @@ $('#tab-glos').addEventListener('click', () => {
   $('#tab-glos').classList.add('active'); $('#tab-hist').classList.remove('active');
   $('#pane-glos').hidden = false; $('#pane-hist').hidden = true;
 });
-
-loadGlossary();
-loadHistory();
+loadGlossary(); loadHistory();
 </script>
 </body>
 </html>

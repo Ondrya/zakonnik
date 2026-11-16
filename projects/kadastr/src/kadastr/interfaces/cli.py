@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from ..application.usecases import AnalyzeCadastralObjects, GetGlossary, ManageHistory, extract_entries
+from ..infrastructure.cache_repo import JsonCacheRepository
 from ..infrastructure.glossary_repo import JsonGlossaryRepository
 from ..infrastructure.history_repo import JsonHistoryRepository
 from ..infrastructure.nspd import NspdGateway, NspdBlocked
@@ -47,6 +48,7 @@ def main(argv=None) -> int:
     p.add_argument("--retries", type=int)
     p.add_argument("--no-open", action="store_true")
     p.add_argument("--name", help="Имя для единственного КН")
+    p.add_argument("--refresh", action="store_true", help="Игнорировать кэш")
     p.add_argument("--history", action="store_true", help="Показать историю и выйти")
     p.add_argument("--glossary", action="store_true", help="Показать справочник и выйти")
     args = p.parse_args(argv)
@@ -107,14 +109,15 @@ def main(argv=None) -> int:
 
     gateway = NspdGateway(delay=delay, retries=retries, proxy=proxy)
     history = JsonHistoryRepository(ROOT / "data" / "history.json")
-    usecase = AnalyzeCadastralObjects(gateway, history=history)
+    cache = JsonCacheRepository(ROOT / "data" / "cache.json")
+    usecase = AnalyzeCadastralObjects(gateway, history=history, cache=cache)
 
     def progress(i, n, cn):
         print(f"[{i}/{n}] {cn} ...", flush=True)
 
     # progress через обёртку execute — упростим: печатаем до запроса
     print("Запрос к НСПД...", flush=True)
-    run = usecase.execute(numbers, names=names)
+    run = usecase.execute(numbers, names=names, refresh=args.refresh)
 
     json_path = out_dir / "report.json"
     html_path = out_dir / "report.html"

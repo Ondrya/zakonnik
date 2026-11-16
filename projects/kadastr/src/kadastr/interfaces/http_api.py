@@ -19,9 +19,10 @@ from ..application.usecases import (
     AnalyzeCadastralObjects,
     GetGlossary,
     ManageHistory,
+    SearchByText,
     extract_entries,
-    extract_numbers,
 )
+from ..infrastructure.cache_repo import JsonCacheRepository
 from ..infrastructure.glossary_repo import JsonGlossaryRepository
 from ..infrastructure.history_repo import JsonHistoryRepository
 from ..infrastructure.nspd import NspdBlocked, NspdGateway
@@ -30,6 +31,8 @@ ROOT = Path(__file__).resolve().parents[3]
 STATIC = Path(__file__).resolve().parent / "static"
 GLOSSARY_PATH = ROOT / "data" / "glossary.json"
 HISTORY_PATH = ROOT / "data" / "history.json"
+CACHE_PATH = ROOT / "data" / "cache.json"
+CACHE_TTL = 86400  # 24 часа
 
 
 def _json_bytes(payload: dict) -> bytes:
@@ -77,6 +80,12 @@ def make_handler(*, delay: float, retries: int, proxy: str | None):
             if u.path == "/api/history":
                 uc = ManageHistory(JsonHistoryRepository(HISTORY_PATH))
                 return self._send_json(uc.list_envelope().to_dict())
+            if u.path == "/api/search":
+                qs = parse_qs(u.query)
+                q = (qs.get("q") or qs.get("query") or [""])[0]
+                uc = SearchByText(NspdGateway(delay=delay, retries=retries, proxy=proxy))
+                env = uc.execute_envelope(q)
+                return self._send_json(env.to_dict(), 200 if env.ok else 400)
             if u.path == "/api/glossary":
                 qs = parse_qs(u.query)
                 code = (qs.get("code") or [None])[0]
@@ -93,7 +102,8 @@ def make_handler(*, delay: float, retries: int, proxy: str | None):
                         {"ok": False, "data": None, "error": {"code": "bad_request", "message": "Укажите кадастровые номера: ?cn=50:14:0000000:156789"}, "meta": {}},
                         400,
                     )
-                return self._analyze(entries)
+                refresh = (qs.get("refresh") or [""])[0] in ("1", "true", "yes")
+                return self._analyze(entries, refresh=refresh)
             if u.path == "/api/report.html":
                 # не кэшируем — отчёт по последнему анализу не храним в API-режиме
                 return self._send_json(
@@ -159,7 +169,8 @@ def make_handler(*, delay: float, retries: int, proxy: str | None):
                     {"ok": False, "data": None, "error": {"code": "bad_request", "message": "Поле numbers: список КН или КН | имя"}, "meta": {}},
                     400,
                 )
-            return self._analyze(list(zip(order, [names[c] for c in order])))
+            refresh = bool(body.get("refresh"))
+            return self._analyze(list(zip(order, [names[c] for c in order])), refresh=refresh)
 
         def do_DELETE(self):
             u = urlparse(self.path)
@@ -194,7 +205,7 @@ def make_handler(*, delay: float, retries: int, proxy: str | None):
                 404,
             )
 
-        def _analyze(self, entries):
+        def _analyze(self, entries, *, refresh: bool = False):
             # entries: список (cn, name|None) или (cn, name) из zip
             names: dict[str, str | None] = {}
             cns: list[str] = []
@@ -208,9 +219,10 @@ def make_handler(*, delay: float, retries: int, proxy: str | None):
                 names[cn] = name
             gateway = NspdGateway(delay=delay, retries=retries, proxy=proxy)
             history = JsonHistoryRepository(HISTORY_PATH)
-            uc = AnalyzeCadastralObjects(gateway, history=history)
+            cache = JsonCacheRepository(CACHE_PATH, ttl_seconds=CACHE_TTL)
+            uc = AnalyzeCadastralObjects(gateway, history=history, cache=cache)
             try:
-                env = uc.execute_envelope(cns, names=names)
+                env = uc.execute_envelope(cns, names=names, refresh=refresh)
             except NspdBlocked as e:
                 return self._send_json(
                     {"ok": False, "data": None, "error": {"code": "blocked", "message": str(e)}, "meta": {}},

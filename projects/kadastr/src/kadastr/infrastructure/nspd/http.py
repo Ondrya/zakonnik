@@ -154,6 +154,16 @@ class NspdHttpClient:
             return None
         return ((data or {}).get("data") or {}).get("features") or None
 
+    def geocode(self, address: str) -> list[dict]:
+        try:
+            data = self.request(
+                "/api/registers-manager/v2/geocoder/search",
+                params={"address": address},
+            )
+        except (NspdNotFound, NspdHttpError):
+            return []
+        return data if isinstance(data, list) else []
+
     def intersects(self, geom_wgs84: dict, category_ids: list[int]) -> list[dict] | None:
         payload = {
             "categories": [{"id": c} for c in category_ids],
