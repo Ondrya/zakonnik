@@ -59,6 +59,11 @@ button.ghost { background:transparent; color:var(--accent); border:1px solid var
 .problem .l { font-size:12px; color:var(--muted); margin-top:4px }
 .problem .r { font-size:12px; color:var(--accent); margin-top:4px }
 #map { height:420px; border-radius:12px; border:1px solid var(--line); background:#0f172a }
+.map-head { display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; padding:4px 0 }
+.map-head span { font-weight:600; font-size:16px }
+.map-head button { width:auto; margin:0; padding:4px 10px; font-size:12px; background:var(--card2); color:var(--muted); border:1px solid var(--line) }
+#map-body.collapsed { display:none }
+#map-body { transition: all .15s ease }
 .kpis { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px }
 .kpi { background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:13px }
 .kpi b { display:block; font-size:18px }
@@ -123,8 +128,13 @@ a { color:var(--accent) }
     <div class="panel" id="results" hidden>
       <div class="kpis" id="kpis"></div>
       <div id="summary"></div>
-      <h3>Карта</h3>
-      <div id="map"></div>
+      <div class="map-head" onclick="toggleMap()">
+        <span>Карта</span>
+        <button id="map-toggle" type="button" onclick="event.stopPropagation(); toggleMap()">Свернуть</button>
+      </div>
+      <div id="map-body">
+        <div id="map"></div>
+      </div>
       <h3>Детали и проблемы</h3>
       <div id="filters">
         <button data-f="all" class="active">Все</button>
@@ -310,6 +320,17 @@ window.addEventListener('click', e => {
   if (btn && btn.dataset.cn) scrollToObj(btn.dataset.cn);
 });
 
+function toggleMap(force) {
+  const body = $('#map-body');
+  const btn = $('#map-toggle');
+  const willCollapse = typeof force === 'boolean' ? force : !body.classList.contains('collapsed');
+  body.classList.toggle('collapsed', willCollapse);
+  btn.textContent = willCollapse ? 'Развернуть' : 'Свернуть';
+  try { localStorage.setItem('kadastr_map_collapsed', willCollapse ? '1' : '0'); } catch(e) {}
+  if (!willCollapse && map) setTimeout(() => map.invalidateSize(), 80);
+}
+try { if (localStorage.getItem('kadastr_map_collapsed') === '1') toggleMap(true); } catch(e) {}
+
 function geojsonFrom(run) {
   const feats = [];
   const colors = {
@@ -405,7 +426,7 @@ function render(run) {
     }
   }).addTo(map);
   try { map.fitBounds(layer.getBounds(), {padding:[20,20]}); } catch(e) { map.setView([55.75,37.62],10); }
-  setTimeout(()=>map.invalidateSize(), 50);
+  if (!$('#map-body').classList.contains('collapsed')) setTimeout(()=>map.invalidateSize(), 50);
 }
 
 async function analyze() {
