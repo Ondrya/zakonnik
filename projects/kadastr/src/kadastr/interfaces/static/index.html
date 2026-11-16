@@ -273,6 +273,19 @@ function applyFilter() {
 }
 
 /* карта #3 */
+function tipHtml(o) {
+  if (!o) return '';
+  const s = SEV[o.max_severity] || SEV.ok;
+  const tops = (o.problems||[]).filter(p=>['critical','high'].includes(p.severity)).slice(0,4);
+  const rows = tops.length ? tops.map(p=>`<div>• ${p.title}</div>`).join('') : '';
+  const name = o.name || o.cad_number || '';
+  return `<div style="min-width:160px">
+    <b>${name}</b><br>
+    <span class="badge" style="background:${s.c}">${s.t}</span>
+    ${rows ? `<div style="margin:6px 0">${rows}</div>` : ''}
+    <div class="hint">клик — подробнее</div>
+  </div>`;
+}
 function popupHtml(o) {
   if (!o) return '<b>объект</b>';
   const s = SEV[o.max_severity] || SEV.ok;
@@ -386,9 +399,8 @@ function render(run) {
       const p = f.properties || {};
       const all = [...(run.objects||[]), ...(run.cached_objects||[])];
       const o = all.find(x => x.cad_number === p.cn || (x.linked_zu && x.linked_zu.cad_number === p.cn));
-      const html = popupHtml(o) || `<b>${p.title||''}</b>`;
-      l.bindTooltip(html, {sticky:true, interactive:true, direction:'top', opacity:1, className:'nspd-tip'});
-      l.bindPopup(html, {maxWidth:300});
+      l.bindTooltip(tipHtml(o), {sticky:true, direction:'top', opacity:1, className:'nspd-tip'});
+      l.bindPopup(popupHtml(o), {maxWidth:300});
     }
   }).addTo(map);
   try { map.fitBounds(layer.getBounds(), {padding:[20,20]}); } catch(e) { map.setView([55.75,37.62],10); }
