@@ -252,6 +252,31 @@ class TestCache(unittest.TestCase):
         self.assertIsNone(c.get("50:14:0000000:156789"))
 
 
+class TestAuth(unittest.TestCase):
+    def test_password_hash(self):
+        from kadastr.infrastructure.auth import hash_password, verify_password
+        h = hash_password("секрет123")
+        self.assertTrue(verify_password("секрет123", h))
+        self.assertFalse(verify_password("другое", h))
+
+    def test_sqlite_users_sessions(self):
+        import tempfile
+        from pathlib import Path
+        from kadastr.infrastructure.auth import SqliteAuthStore
+        from kadastr.domain.auth import User
+        store = SqliteAuthStore(Path(tempfile.mkdtemp()) / "auth.sqlite")
+        self.assertEqual(store.count(), 0)
+        u = store.upsert(User(id=0, login="ivan", display_name="Иван", provider="local"), password="pass")
+        self.assertEqual(store.count(), 1)
+        self.assertIsNotNone(store.verify_password("ivan", "pass"))
+        self.assertIsNone(store.verify_password("ivan", "wrong"))
+        sess = store.create_session(u.id)
+        self.assertIsNotNone(store.get_session(sess.token))
+        self.assertIsNotNone(store.user_from_cookie(sess.token))
+        store.delete_session(sess.token)
+        self.assertIsNone(store.get_session(sess.token))
+
+
 class TestGlossary(unittest.TestCase):
     def test_load_json(self):
         repo = JsonGlossaryRepository(ROOT / "data" / "glossary.json")

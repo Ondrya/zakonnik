@@ -19,6 +19,10 @@ data/history.json
 projects/kadastr/data/history.json
 data/cache.json
 projects/kadastr/data/cache.json
+data/auth.sqlite
+projects/kadastr/data/auth.sqlite
+projects/kadastr/data/history_*.json
+projects/kadastr/data/cache_*.json
 
 # IDE / OS
 .idea/

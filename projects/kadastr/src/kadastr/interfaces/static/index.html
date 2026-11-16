@@ -75,6 +75,10 @@ a { color:var(--accent) }
 #filters button { width:auto; margin:0; padding:4px 10px; font-size:12px; background:var(--card2); color:var(--muted); border:1px solid var(--line) }
 #filters button.active { color:#04121f; font-weight:700 }
 #rename-dialog { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:1000 }
+#login-dialog { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:1000 }
+#login-dialog .box, #rename-dialog .box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; width:min(400px, 90vw) }
+#login-dialog input { width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0 }
+.btn-yandex { background:#fc3f1d; color:#fff; font-weight:700 }
 #rename-dialog .box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; width:min(400px, 90vw) }
 #rename-dialog input { width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; margin:8px 0 }
 .leaflet-popup-content b { color:#0f172a }
@@ -92,6 +96,7 @@ a { color:var(--accent) }
   <h1>Законник · Кадастр</h1>
   <span class="tag">ПКК/НСПД · история · адрес · кэш · фильтры</span>
   <span style="flex:1"></span>
+  <span id="auth-box" class="tag"></span>
   <a href="/api/glossary" target="_blank" class="tag">API</a>
 </header>
 <main>
@@ -163,6 +168,22 @@ a { color:var(--accent) }
     <div style="display:flex; gap:8px">
       <button id="rename-save">Сохранить</button>
       <button id="rename-cancel" class="ghost">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<div id="login-dialog">
+  <div class="box">
+    <h3>Вход</h3>
+    <a id="yandex-btn" class="btn-yandex" href="/auth/yandex/login" style="display:none; text-align:center; text-decoration:none">Войти через Яндекс</a>
+    <div id="local-form">
+      <input id="login-login" placeholder="логин">
+      <input id="login-pass" type="password" placeholder="пароль">
+      <div style="display:flex; gap:8px">
+        <button id="login-go">Войти</button>
+        <button id="login-cancel" class="ghost">Отмена</button>
+      </div>
+      <div class="hint">Первый вход с новым логином — регистрация.</div>
     </div>
   </div>
 </div>
@@ -452,6 +473,7 @@ async function analyze() {
       payload = {numbers: items, refresh: $('#refresh').checked};
     }
     const r = await fetch('/api/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    if (r.status === 401) { $('#status').innerHTML='<span class="err">Требуется вход</span>'; openLogin('n'); return; }
     const env = await r.json();
     if (!env.ok) throw new Error(env.error?.message || 'Ошибка анализа');
     render(env.data);
@@ -474,7 +496,50 @@ $('#tab-glos').addEventListener('click', () => {
   $('#tab-glos').classList.add('active'); $('#tab-hist').classList.remove('active');
   $('#pane-glos').hidden = false; $('#pane-hist').hidden = true;
 });
-loadGlossary(); loadHistory();
+loadGlossary(); loadHistory(); loadMe();
+
+async function loadMe() {
+  try {
+    const r = await fetch('/api/me');
+    const env = await r.json();
+    const d = env.data || {};
+    const box = $('#auth-box');
+    if (d.user) {
+      box.innerHTML = `${d.user.display_name} · <a href="/auth/logout">Выйти</a>`;
+      $('#yandex-btn').style.display = 'none';
+    } else {
+      box.innerHTML = `<a href="#" onclick="openLogin('${d.yandex ? 'y' : 'n'}'); return false">Войти</a>`;
+      $('#yandex-btn').style.display = d.yandex ? '' : 'none';
+      $('#local-form').style.display = d.allow_local ? '' : 'none';
+    }
+  } catch(e) {
+    $('#auth-box').textContent = 'вход недоступен';
+  }
+}
+function openLogin(hasYandex) {
+  $('#login-dialog').style.display = 'flex';
+  if (hasYandex === 'y' && !$('#local-form').offsetParent) {
+    location.href = '/auth/yandex/login';
+  }
+}
+$('#login-cancel').addEventListener('click', () => $('#login-dialog').style.display='none');
+$('#login-go').addEventListener('click', async () => {
+  const login = $('#login-login').value.trim();
+  const password = $('#login-pass').value;
+  if (!login || !password) return;
+  try {
+    const r = await fetch('/auth/local', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({login, password})
+    });
+    const env = await r.json();
+    if (!env.ok) throw new Error(env.error?.message || 'ошибка входа');
+    $('#login-dialog').style.display='none';
+    loadMe(); loadHistory();
+  } catch(e) {
+    $('#status').innerHTML = `<span class="err">${e.message}</span>`;
+  }
+});
 </script>
 </body>
 </html>

@@ -4,5 +4,14 @@
   "glossary_file": "data/glossary.json",
   "delay_ms": 700,
   "retries": 3,
-  "proxy": null
+  "proxy": null,
+  "require_auth": false,
+  "allow_local": true,
+  "oauth": {
+    "yandex": {
+      "client_id": "",
+      "client_secret": "",
+      "comment": "Заведите приложение на oauth.yandex.ru, redirect_uri: http://127.0.0.1:8765/auth/yandex/callback. Пустые ключи = кнопка Яндекса скрыта. Не публикуйте секрет в git."
+    }
+  }
 }

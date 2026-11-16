@@ -114,6 +114,24 @@ GET  /             # UI
 (`for_lawyer` + `regulations`). Показывается в UI и отдаётся API.
 Связан с кодами проблем (`related_problems` ↔ `Problem.glossary`).
 
+## Авторизация (issue #5)
+
+По умолчанию вход необязателен (`require_auth: false`) — история общая.
+
+**Локальный вход:** кнопка «Войти» в шапке, логин+пароль. Первый вход с новым логином — регистрация.
+
+**Яндекс OAuth:**
+1. Создайте приложение на https://oauth.yandex.ru/
+2. Redirect URI: `http://127.0.0.1:8765/auth/yandex/callback`
+3. Вставьте `client_id` и `client_secret` в `config.json` → `oauth.yandex`
+4. Кнопка «Войти через Яндекс» появится автоматически
+5. Не публикуйте `client_secret` в публичный репозиторий
+
+Когда вошли — история и кэш отдельно по пользователю (`history_<id>.json`).
+`require_auth: true` — без входа анализ/история недоступны (401).
+
+Сессии: SQLite `data/auth.sqlite` (порт готов к замене на PostgreSQL). VK/Mail — по той же схеме провайдера, когда будут ключи.
+
 ## Настройки
 
 `config.json`: `delay_ms`, `retries`, `proxy` (если 403 — российский резидентный IP).
